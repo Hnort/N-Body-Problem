@@ -19,8 +19,8 @@ typedef struct {
 } Particle;
 
 void read_input_file(const char *filename, Particle **particles, int *N);
-void compute_forces(Particle *particles, int N, double G, double *ax, double *ay);
-void update_positions(Particle *particles, int N, double delta_t, double *ax, double *ay);
+void compute_forces(Particle *particles, const int N, const double G, double *ax, double *ay);
+void update_positions(Particle *particles, const int N, double delta_t, double *ax, double *ay);
 void write_output_file(const char *filename, Particle *particles, int N);
 void simulate(int N, char *filename, int nsteps, double delta_t, int graphics);
 void visualize(Particle *particles, int N);
@@ -54,11 +54,18 @@ void read_input_file(const char *filename, Particle **particles, int *N) {
         exit(1);
     }
 
-    fread(*particles, sizeof(Particle), *N, file);
+    size_t read_count = fread(*particles, sizeof(Particle), *N, file);
+    if (read_count != (size_t)(*N)) {
+        perror("Error reading file");
+        free(*particles);
+        fclose(file);
+        exit(1);
+    }
+
     fclose(file);
 }
 
-void compute_forces(Particle *particles, int N, double G, double *ax, double *ay) {
+void compute_forces(Particle *particles, const int N, const double G, double *ax, double *ay) {
     for (int i = 0; i < N; i++) {
         ax[i] = 0.0;
         ay[i] = 0.0;
@@ -101,7 +108,7 @@ void compute_forces(Particle *particles, int N, double G, double *ax, double *ay
 }
 
 
-void update_positions(Particle *particles, int N, double delta_t, double *ax, double *ay) {
+void update_positions(Particle *particles, const int N, double delta_t, double *ax, double *ay) {
     for (int i = 0; i < N; i++) {
         particles[i].vx += delta_t * ax[i];
         particles[i].vy += delta_t * ay[i];

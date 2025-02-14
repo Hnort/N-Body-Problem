@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -O3 -lm -lX11
+CFLAGS = -Wall -O3 -fopt-info-vec -lm -lX11
 OBJS = galsim.o graphics.o
 
 all: galsim
