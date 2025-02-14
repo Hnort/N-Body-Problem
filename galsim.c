@@ -5,6 +5,7 @@
 #include "graphics.h"
 
 #define EPSILON 1e-3
+#define GRAPHICS 0
 
 const int windowWidth = 800;
 const float particleRadius = 0.005;
@@ -125,7 +126,7 @@ void simulate(int N, char *filename, int nsteps, double delta_t, int graphics) {
     Particle *particles;
     read_input_file(filename, &particles, &N);
 
-    double G = 100.0 / N;
+    const double G = 100.0 / N;
 
     double *ax = (double *)malloc(N * sizeof(double));
     double *ay = (double *)malloc(N * sizeof(double));
@@ -134,28 +135,35 @@ void simulate(int N, char *filename, int nsteps, double delta_t, int graphics) {
         exit(1);
     }
 
+#if GRAPHICS
     if (graphics) {
         InitializeGraphics("N-Body Simulation", 800, 800);
         SetCAxes(0, 1);
     }
+#endif
 
     for (int step = 0; step < nsteps; step++) {
         compute_forces(particles, N, G, ax, ay);
         update_positions(particles, N, delta_t, ax, ay);
 
+#if GRAPHICS
         if (graphics) {
             visualize(particles, N);
             usleep(3000);  // Refresh rate
             if (CheckForQuit()) break;
         }
+#endif
+
     }
 
     write_output_file("result.gal", particles, N);
 
+#if GRAPHICS
     if (graphics) {
         FlushDisplay();
         CloseDisplay();
     }
+#endif
 
     free(particles);
     free(ax);
