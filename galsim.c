@@ -67,121 +67,108 @@ void read_input_file(const char *filename, Particle **particles, int *N) {
 }
 
 void compute_forces(Particle *particles, const int N, const double G, double *ax, double *ay) {
-    // for (int i = 0; i < N; i++) {
-    //     ax[i] = 0.0;
-    //     ay[i] = 0.0;
-    // }
-
     memset(ax, 0, N * sizeof(double));
     memset(ay, 0, N * sizeof(double));
 
-    // for (int i = 0; i < N; i++) {
-    //     for (int j = 0; j < N; j++) {
-    //         if (i == j) continue;
-
-    //         double dx = particles[j].x - particles[i].x;
-    //         double dy = particles[j].y - particles[i].y;
-    //         double r2 = dx * dx + dy * dy + EPSILON * EPSILON;
-    //         double r = sqrt(r2);
-    //         double F = G * particles[i].mass * particles[j].mass / (r2 * r);
-
-    //         ax[i] += F * dx / particles[i].mass;
-    //         ay[i] += F * dy / particles[i].mass;
-    //     }
-    // }
 #if UNROLLING
-
-    const double EPS2 = EPSILON * EPSILON;
+    const double EPS = 1e-3; 
 
     for (int i = 0; i < N; i++) {
-    double xi = particles[i].x;
-    double yi = particles[i].y;
-    double mi = particles[i].mass;
+        double xi = particles[i].x;
+        double yi = particles[i].y;
+        double mi = particles[i].mass;
 
-    for (int j = i + 1; j + 3 < N; j += 4) {
-        double dx1 = particles[j].x - xi;
-        double dy1 = particles[j].y - yi;
-        double r2_1 = dx1 * dx1 + dy1 * dy1 + EPS2;
-        double inv_r3_1 = 1.0 / (r2_1 * sqrt(r2_1));
-        double F1 = G * mi * particles[j].mass * inv_r3_1;
-        double Fx1 = F1 * dx1;
-        double Fy1 = F1 * dy1;
+        // Process 4 particles per iteration
+        for (int j = i + 1; j + 3 < N; j += 4) {
+            // Particle j
+            double dx1 = particles[j].x - xi;
+            double dy1 = particles[j].y - yi;
+            double r1 = sqrt(dx1*dx1 + dy1*dy1);
+            double denom1 = (r1 + EPS) * (r1 + EPS) * (r1 + EPS);
+            double F1 = G * mi * particles[j].mass / denom1;
+            double Fx1 = F1 * dx1;
+            double Fy1 = F1 * dy1;
 
-        double dx2 = particles[j + 1].x - xi;
-        double dy2 = particles[j + 1].y - yi;
-        double r2_2 = dx2 * dx2 + dy2 * dy2 + EPS2;
-        double inv_r3_2 = 1.0 / (r2_2 * sqrt(r2_2));
-        double F2 = G * mi * particles[j + 1].mass * inv_r3_2;
-        double Fx2 = F2 * dx2;
-        double Fy2 = F2 * dy2;
+            // Particle j+1
+            double dx2 = particles[j+1].x - xi;
+            double dy2 = particles[j+1].y - yi;
+            double r2 = sqrt(dx2*dx2 + dy2*dy2);
+            double denom2 = (r2 + EPS) * (r2 + EPS) * (r2 + EPS);
+            double F2 = G * mi * particles[j+1].mass / denom2;
+            double Fx2 = F2 * dx2;
+            double Fy2 = F2 * dy2;
 
-        double dx3 = particles[j + 2].x - xi;
-        double dy3 = particles[j + 2].y - yi;
-        double r2_3 = dx3 * dx3 + dy3 * dy3 + EPS2;
-        double inv_r3_3 = 1.0 / (r2_3 * sqrt(r2_3));
-        double F3 = G * mi * particles[j + 2].mass * inv_r3_3;
-        double Fx3 = F3 * dx3;
-        double Fy3 = F3 * dy3;
+            // Particle j+2
+            double dx3 = particles[j+2].x - xi;
+            double dy3 = particles[j+2].y - yi;
+            double r3 = sqrt(dx3*dx3 + dy3*dy3);
+            double denom3 = (r3 + EPS) * (r3 + EPS) * (r3 + EPS);
+            double F3 = G * mi * particles[j+2].mass / denom3;
+            double Fx3 = F3 * dx3;
+            double Fy3 = F3 * dy3;
 
-        double dx4 = particles[j + 3].x - xi;
-        double dy4 = particles[j + 3].y - yi;
-        double r2_4 = dx4 * dx4 + dy4 * dy4 + EPS2;
-        double inv_r3_4 = 1.0 / (r2_4 * sqrt(r2_4));
-        double F4 = G * mi * particles[j + 3].mass * inv_r3_4;
-        double Fx4 = F4 * dx4;
-        double Fy4 = F4 * dy4;
+            // Particle j+3
+            double dx4 = particles[j+3].x - xi;
+            double dy4 = particles[j+3].y - yi;
+            double r4 = sqrt(dx4*dx4 + dy4*dy4);
+            double denom4 = (r4 + EPS) * (r4 + EPS) * (r4 + EPS);
+            double F4 = G * mi * particles[j+3].mass / denom4;
+            double Fx4 = F4 * dx4;
+            double Fy4 = F4 * dy4;
 
-        ax[i] += (Fx1 + Fx2 + Fx3 + Fx4) / mi;
-        ay[i] += (Fy1 + Fy2 + Fy3 + Fy4) / mi;
+            // Update accelerations
+            ax[i] += (Fx1 + Fx2 + Fx3 + Fx4) / mi;
+            ay[i] += (Fy1 + Fy2 + Fy3 + Fy4) / mi;
 
-        ax[j] -= Fx1 / particles[j].mass;
-        ay[j] -= Fy1 / particles[j].mass;
+            ax[j]   -= Fx1 / particles[j].mass;
+            ay[j]   -= Fy1 / particles[j].mass;
+            ax[j+1] -= Fx2 / particles[j+1].mass;
+            ay[j+1] -= Fy2 / particles[j+1].mass;
+            ax[j+2] -= Fx3 / particles[j+2].mass;
+            ay[j+2] -= Fy3 / particles[j+2].mass;
+            ax[j+3] -= Fx4 / particles[j+3].mass;
+            ay[j+3] -= Fy4 / particles[j+3].mass;
+        }
 
-        ax[j + 1] -= Fx2 / particles[j + 1].mass;
-        ay[j + 1] -= Fy2 / particles[j + 1].mass;
-
-        ax[j + 2] -= Fx3 / particles[j + 2].mass;
-        ay[j + 2] -= Fy3 / particles[j + 2].mass;
-
-        ax[j + 3] -= Fx4 / particles[j + 3].mass;
-        ay[j + 3] -= Fy4 / particles[j + 3].mass;
-    }
-
-    for (int j = N - (N % 4); j < N; j++) {
-        double dx = particles[j].x - xi;
-        double dy = particles[j].y - yi;
-        double r2 = dx * dx + dy * dy + EPS2;
-        double inv_r3 = 1.0 / (r2 * sqrt(r2));
-        double F = G * mi * particles[j].mass * inv_r3;
-        double Fx = F * dx;
-        double Fy = F * dy;
-
-        ax[i] += Fx / mi;
-        ay[i] += Fy / mi;
-
-        ax[j] -= Fx / particles[j].mass;
-        ay[j] -= Fy / particles[j].mass;
-    }
-}
-
-#else
-    for (int i = 0; i < N; i++) {
-        // Symmetric Update
-        for (int j = i + 1; j < N; j++) {
-            double dx = particles[j].x - particles[i].x;
-            double dy = particles[j].y - particles[i].y;
-            double r2 = dx * dx + dy * dy + EPSILON * EPSILON;
-            double inv_r3 = 1.0 / (r2 * sqrt(r2));
-            double F = G * particles[i].mass * particles[j].mass * inv_r3;
-
+        // Process remaining particles (cleanup loop)
+        for (int j = N - (N % 4); j < N; j++) {
+            if (i == j) continue;
+            
+            double dx = particles[j].x - xi;
+            double dy = particles[j].y - yi;
+            double r = sqrt(dx*dx + dy*dy);
+            double denom = (r + EPS) * (r + EPS) * (r + EPS);
+            double F = G * mi * particles[j].mass / denom;
             double Fx = F * dx;
             double Fy = F * dy;
 
-            ax[i] += Fx / particles[i].mass;
-            ay[i] += Fy / particles[i].mass;
-
+            ax[i] += Fx / mi;
+            ay[i] += Fy / mi;
+            
             ax[j] -= Fx / particles[j].mass;
             ay[j] -= Fy / particles[j].mass;
+        }
+    }
+#else
+    // Original non-unrolled version with corrected formula
+    const double EPS = 1e-3;
+    
+    for (int i = 0; i < N; i++) {
+        double xi = particles[i].x;
+        double yi = particles[i].y;
+        double mi = particles[i].mass;
+
+        for (int j = 0; j < N; j++) {
+            if (i == j) continue;
+
+            double dx = particles[j].x - xi;
+            double dy = particles[j].y - yi;
+            double r = sqrt(dx*dx + dy*dy);
+            double denom = (r + EPS) * (r + EPS) * (r + EPS);
+            double F = G * mi * particles[j].mass / denom;
+
+            ax[i] += (F * dx) / mi;
+            ay[i] += (F * dy) / mi;
         }
     }
 #endif
