@@ -5,7 +5,7 @@
 #include "graphics.h"
 
 #define EPSILON 1e-3
-#define GRAPHICS 0
+#define GRAPHICS 1
 #define UNROLLING 1
 
 const int windowWidth = 800;
