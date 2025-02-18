@@ -77,9 +77,9 @@ void compute_forces(Particle *particles, const int N, const double G, double *ax
         double xi = particles[i].x;
         double yi = particles[i].y;
         double mi = particles[i].mass;
-
+        int j;
         // Process 4 particles per iteration
-        for (int j = i + 1; j + 3 < N; j += 4) {
+        for (j = i + 1; j + 3 < N; j += 4) {
             // Particle j
             double dx1 = particles[j].x - xi;
             double dy1 = particles[j].y - yi;
@@ -130,8 +130,25 @@ void compute_forces(Particle *particles, const int N, const double G, double *ax
             ay[j+3] -= Fy4 / particles[j+3].mass;
         }
 
-        // Process remaining particles (cleanup loop)
-        for (int j = N - (N % 4); j < N; j++) {
+        // // Process remaining particles (cleanup loop)
+        // for (int j = N - (N % 4); j < N; j++) {
+        //     if (i == j) continue;
+            
+        //     double dx = particles[j].x - xi;
+        //     double dy = particles[j].y - yi;
+        //     double r = sqrt(dx*dx + dy*dy);
+        //     double denom = (r + EPS) * (r + EPS) * (r + EPS);
+        //     double F = G * mi * particles[j].mass / denom;
+        //     double Fx = F * dx;
+        //     double Fy = F * dy;
+
+        //     ax[i] += Fx / mi;
+        //     ay[i] += Fy / mi;
+            
+        //     ax[j] -= Fx / particles[j].mass;
+        //     ay[j] -= Fy / particles[j].mass;
+        // }
+        for (; j < N; j++) {
             if (i == j) continue;
             
             double dx = particles[j].x - xi;
@@ -151,24 +168,28 @@ void compute_forces(Particle *particles, const int N, const double G, double *ax
     }
 #else
     // Original non-unrolled version with corrected formula
-    const double EPS = 1e-3;
+    c const double EPS = 1e-3;
     
     for (int i = 0; i < N; i++) {
         double xi = particles[i].x;
         double yi = particles[i].y;
         double mi = particles[i].mass;
 
-        for (int j = 0; j < N; j++) {
-            if (i == j) continue;
-
+        for (int j = i + 1; j < N; j++) { // 仅处理j > i的情况
             double dx = particles[j].x - xi;
             double dy = particles[j].y - yi;
             double r = sqrt(dx*dx + dy*dy);
             double denom = (r + EPS) * (r + EPS) * (r + EPS);
             double F = G * mi * particles[j].mass / denom;
+            double Fx = F * dx;
+            double Fy = F * dy;
 
-            ax[i] += (F * dx) / mi;
-            ay[i] += (F * dy) / mi;
+            // 更新i和j的加速度
+            ax[i] += Fx / mi;
+            ay[i] += Fy / mi;
+            
+            ax[j] -= Fx / particles[j].mass; // j的加速度反向
+            ay[j] -= Fy / particles[j].mass;
         }
     }
 #endif
