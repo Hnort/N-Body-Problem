@@ -175,7 +175,7 @@ void compute_forces(Particle *particles, const int N, const double G, double *ax
         double yi = particles[i].y;
         double mi = particles[i].mass;
 
-        for (int j = i + 1; j < N; j++) { // 仅处理j > i的情况
+        for (int j = i + 1; j < N; j++) { 
             double dx = particles[j].x - xi;
             double dy = particles[j].y - yi;
             double r = sqrt(dx*dx + dy*dy);
@@ -184,11 +184,11 @@ void compute_forces(Particle *particles, const int N, const double G, double *ax
             double Fx = F * dx;
             double Fy = F * dy;
 
-            // 更新i和j的加速度
+
             ax[i] += Fx / mi;
             ay[i] += Fy / mi;
             
-            ax[j] -= Fx / particles[j].mass; // j的加速度反向
+            ax[j] -= Fx / particles[j].mass; 
             ay[j] -= Fy / particles[j].mass;
         }
     }
