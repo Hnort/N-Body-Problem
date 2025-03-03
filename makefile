@@ -1,4 +1,4 @@
-CC = gcc
+CC = gcc -fopenmp
 CFLAGS = -Wall -O3 -fopt-info-vec -lm -lX11 -ffast-math -march=native 
 OBJS = galsim.o graphics.o
 

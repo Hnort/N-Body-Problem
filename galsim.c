@@ -3,6 +3,8 @@
 #include <math.h>
 #include <string.h>
 #include "graphics.h"
+#include <omp.h>
+
 
 #define EPSILON 1e-3
 #define GRAPHICS 1 
@@ -32,8 +34,8 @@ void visualize(int N, const double * restrict x, const double * restrict y);
 void simulate(int N, char *filename, int nsteps, double delta_t, int graphics);
 
 int main(int argc, char *argv[]) {
-    if (argc != 6) {
-        printf("Usage: ./galsim N filename nsteps delta_t graphics\n");
+    if (argc != 7) {
+        printf("Usage: ./galsim N filename nsteps delta_t graphics n_threads\n");
         return 1;
     }
     int N = atoi(argv[1]);
@@ -41,6 +43,8 @@ int main(int argc, char *argv[]) {
     int nsteps = atoi(argv[3]);
     double delta_t = atof(argv[4]);
     int graphics = atoi(argv[5]);
+    int n_threads = atoi(argv[6]);
+    omp_set_num_threads(n_threads);
     simulate(N, filename, nsteps, delta_t, graphics);
     return 0;
 }
@@ -88,6 +92,10 @@ void compute_forces(int N, double G,
     const double EPS = EPSILON;
     memset(ax, 0, N * sizeof(double));
     memset(ay, 0, N * sizeof(double));
+
+    
+    /*
+    //#pragma omp parallel for schedule(dynamic)
     for (int i = 0; i < N; i++) {
         // Precompute all constants and mark them with const so that the compiler can optimize
         const double xi = x[i];
@@ -110,12 +118,72 @@ void compute_forces(int N, double G,
             const double a_j = G_mi / denom;
             axi += a_i * dx;
             ayi += a_i * dy;
-            ax[j] -= a_j * dx;
-            ay[j] -= a_j * dy;
+            // The resource comsumption of atomic operation is very high, we use other method instead
+            // #pragma omp atomic
+            // ax[j] -= a_j * dx;
+            // #pragma omp atomic
+            // ay[j] -= a_j * dy;
         }
-        ax[i] += axi;
-        ay[i] += ayi;
+        // #pragma omp atomic
+        // ax[i] += axi;
+        // #pragma omp atomic
+        // ay[i] += ayi;
     }
+    */
+   #pragma omp parallel
+   {
+       // Allocate a private accumulation array for each thread, initialized to 0
+       double *ax_private = (double *)calloc(N, sizeof(double));
+       double *ay_private = (double *)calloc(N, sizeof(double));
+       if (ax_private == NULL || ay_private == NULL) {
+           perror("Memory allocation failed in thread private arrays");
+           exit(1);
+       }
+
+       // Use dynamic scheduling to solve the problem of uneven 
+       // workload of inner loops corresponding to different i
+       // Can try nowait, but it seems useless
+       #pragma omp for schedule(dynamic)
+       for (int i = 0; i < N; i++) {
+           const double xi = x[i];
+           const double yi = y[i];
+           const double mi = mass[i];
+           const double G_mi = G * mi;
+           double axi = 0.0;
+           double ayi = 0.0;
+           for (int j = i + 1; j < N; j++) {
+               const double xj = x[j];
+               const double yj = y[j];
+               const double dx = xj - xi;
+               const double dy = yj - yi;
+               const double r_sq = dx * dx + dy * dy;
+               const double r = sqrt(r_sq);
+               const double r_eps = r + EPS;
+               const double denom = r_eps * r_eps * r_eps;
+               const double a_i = G * mass[j] / denom;
+               const double a_j = G_mi / denom;
+               axi += a_i * dx;
+               ayi += a_i * dy;
+               ax_private[j] -= a_j * dx;
+               ay_private[j] -= a_j * dy;
+           }
+           ax_private[i] += axi;
+           ay_private[i] += ayi;
+       }
+
+       // Reduction: add each thread's private array to the global array
+       #pragma omp critical
+       {
+           for (int i = 0; i < N; i++) {
+               ax[i] += ax_private[i];
+               ay[i] += ay_private[i];
+           }
+       }
+
+       free(ax_private);
+       free(ay_private);
+   }
+
 }
 
 /* Update the positions and velocities of all particles */
@@ -123,7 +191,10 @@ void update_positions(int N, double delta_t,
                       double * restrict x, double * restrict y, 
                       double * restrict vx, double * restrict vy, 
                       const double * restrict ax, const double * restrict ay) {
-    for (int i = 0; i < N; i++) {
+        #pragma omp parallel for schedule(dynamic)
+        // This loop is simple enough to be parallelized, we don't need to worry about false sharing
+        // or cache coherence issues
+        for (int i = 0; i < N; i++) {
         vx[i] += delta_t * ax[i];
         vy[i] += delta_t * ay[i];
         x[i]  += delta_t * vx[i];
