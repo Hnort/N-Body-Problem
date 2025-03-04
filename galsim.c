@@ -10,7 +10,7 @@
 #define EPSILON 1e-3
 #define GRAPHICS 1 
 #define pthread 0
-#define CHUNK_SIZE 32
+#define CHUNK_SIZE 64
 
 #if pthread
 /*Parameters for ptheads*/
@@ -77,6 +77,9 @@ int main(int argc, char *argv[]) {
     int graphics = atoi(argv[5]);
     int n_threads = atoi(argv[6]);
     omp_set_num_threads(n_threads);
+// #if pthread
+//     n_threads > 1 ? n_threads-- : 1;
+// #endif
     simulate(N, filename, nsteps, delta_t, graphics, n_threads);
     return 0;
 }
@@ -128,7 +131,6 @@ void *compute_forces_thread(void* args){
     const double * restrict mass = data->mass;
     double * restrict ax_private = data->ax_private;
     double * restrict ay_private = data->ay_private;
-
 
     // Use dynamic scheduling to solve the problem of uneven
     // workload of inner loops corresponding to different i
@@ -239,7 +241,7 @@ void compute_forces(int N, double G,
        // Use dynamic scheduling to solve the problem of uneven 
        // workload of inner loops corresponding to different i
        // Can try nowait, but it seems useless
-       #pragma omp for schedule(dynamic)
+       #pragma omp for schedule(dynamic), nowait
        for (int i = 0; i < N; i++) {
            const double xi = x[i];
            const double yi = y[i];
@@ -284,21 +286,19 @@ void compute_forces(int N, double G,
 #endif
 }
 
-/* Update the positions and velocities of all particles */
+
 void update_positions(int N, double delta_t, 
                       double * restrict x, double * restrict y, 
                       double * restrict vx, double * restrict vy, 
                       const double * restrict ax, const double * restrict ay, int n_threads) {
-        #pragma omp parallel for schedule(dynamic)
-        // This loop is simple enough to be parallelized, we don't need to worry about false sharing
-        // or cache coherence issues
-        for (int i = 0; i < N; i++) {
+    for (int i = 0; i < N; i++) {
         vx[i] += delta_t * ax[i];
         vy[i] += delta_t * ay[i];
         x[i]  += delta_t * vx[i];
         y[i]  += delta_t * vy[i];
     }
 }
+
 
 /* Convert each array data into AoS format and write it to the file */
 void write_output_file(const char *filename, int N, 
@@ -328,6 +328,8 @@ void write_output_file(const char *filename, int N,
     fclose(file);
     free(temp);
 }
+
+
 
 /* Visualization function: draw all particles */
 void visualize(int N, const double * restrict x, const double * restrict y) {
