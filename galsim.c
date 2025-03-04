@@ -151,6 +151,7 @@ void compute_forces(int N, double G,
            const double G_mi = G * mi;
            double axi = 0.0;
            double ayi = 0.0;
+           #pragma omp simd reduction(+:axi, ayi)
            for (int j = i + 1; j < N; j++) {
                const double xj = x[j];
                const double yj = y[j];
