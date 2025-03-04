@@ -4,15 +4,47 @@
 #include <string.h>
 #include "graphics.h"
 #include <omp.h>
+#include <pthread.h>
 
 
 #define EPSILON 1e-3
 #define GRAPHICS 1 
+#define pthread 0
+#define CHUNK_SIZE 32
+
+#if pthread
+/*Parameters for ptheads*/
+typedef struct{
+    int thread_id;
+    int N;
+    double G;
+    const double * restrict x;
+    const double * restrict y;
+    const double * restrict mass;
+    double * ax_private;
+    double * ay_private;
+} thread_data;
+
+typedef struct{
+    int start;
+    int end;
+    double delta_t;
+    double * restrict x;
+    double * restrict y;
+    double * restrict vx;
+    double * restrict vy;
+    const double * restrict ax;
+    const double * restrict ay;
+} update_args_t;
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+int next_i = 0;
+
+#endif
 
 const int windowWidth = 800;
 const float particleRadius = 0.005;
 const float L = 1, W = 1;
-
+const double EPS = EPSILON;
 /* Function prototype, all pointers involving arrays are added with restrict qualifier */
 void read_input_file(const char *filename, int N, 
                      double * restrict x, double * restrict y, 
@@ -21,17 +53,17 @@ void read_input_file(const char *filename, int N,
 void compute_forces(int N, double G, 
                     const double * restrict x, const double * restrict y, 
                     const double * restrict mass, 
-                    double * restrict ax, double * restrict ay);
-void update_positions(int N, double delta_t, 
+                    double * restrict ax, double * restrict ay, int n_threads);
+void update_positions(int N, double delta_t,
                       double * restrict x, double * restrict y, 
                       double * restrict vx, double * restrict vy, 
-                      const double * restrict ax, const double * restrict ay);
+                      const double * restrict ax, const double * restrict ay, int n_threads);
 void write_output_file(const char *filename, int N, 
                        const double * restrict x, const double * restrict y, 
                        const double * restrict mass, const double * restrict vx, 
                        const double * restrict vy, const double * restrict brightness);
 void visualize(int N, const double * restrict x, const double * restrict y);
-void simulate(int N, char *filename, int nsteps, double delta_t, int graphics);
+void simulate(int N, char *filename, int nsteps, double delta_t, int graphics, int n_threads);
 
 int main(int argc, char *argv[]) {
     if (argc != 7) {
@@ -45,7 +77,7 @@ int main(int argc, char *argv[]) {
     int graphics = atoi(argv[5]);
     int n_threads = atoi(argv[6]);
     omp_set_num_threads(n_threads);
-    simulate(N, filename, nsteps, delta_t, graphics);
+    simulate(N, filename, nsteps, delta_t, graphics, n_threads);
     return 0;
 }
 
@@ -85,51 +117,115 @@ void read_input_file(const char *filename, int N,
     free(temp);
 }
 
+
+#if pthread
+void *compute_forces_thread(void* args){
+    thread_data *data = (thread_data *)args;
+    int N = data->N;
+    double G = data->G;
+    const double * restrict x = data->x;
+    const double * restrict y = data->y;
+    const double * restrict mass = data->mass;
+    double * restrict ax_private = data->ax_private;
+    double * restrict ay_private = data->ay_private;
+
+
+    // Use dynamic scheduling to solve the problem of uneven
+    // workload of inner loops corresponding to different i
+
+    while(1){
+        // lock the mutex
+        int current_i;
+        pthread_mutex_lock(&mutex);
+        current_i = next_i;
+        next_i = next_i + CHUNK_SIZE;
+        pthread_mutex_unlock(&mutex);
+
+        if(current_i >= N){
+            break;
+        }
+        int end_i = current_i + CHUNK_SIZE;
+        if (end_i > N) {
+            end_i = N;
+        }
+        for (int i = current_i; i < end_i; i++) {
+            const double xi = x[i];
+            const double yi = y[i];
+            const double mi = mass[i];
+            const double G_mi = G * mi;
+            double axi = 0.0;
+            double ayi = 0.0;
+            #pragma omp simd reduction(+:axi, ayi)
+            for (int j = i + 1; j < N; j++) {
+                const double xj = x[j];
+                const double yj = y[j];
+                const double dx = xj - xi;
+                const double dy = yj - yi;
+                const double r_sq = dx * dx + dy * dy;
+                const double r = sqrt(r_sq);
+                const double r_eps = r + EPSILON;
+                const double denom = r_eps * r_eps * r_eps;
+                const double a_i = G * mass[j] / denom;
+                const double a_j = G_mi / denom;
+                axi += a_i * dx;
+                ayi += a_i * dy;
+                ax_private[j] -= a_j * dx;
+                ay_private[j] -= a_j * dy;
+            }
+            ax_private[i] += axi;
+            ay_private[i] += ayi;
+        }   
+    }
+    return NULL;
+}
+#endif
+
+
 void compute_forces(int N, double G, 
                     const double * restrict x, const double * restrict y, 
                     const double * restrict mass, 
-                    double * restrict ax, double * restrict ay) {
-    const double EPS = EPSILON;
+                    double * restrict ax, double * restrict ay, int n_threads) {
+
     memset(ax, 0, N * sizeof(double));
     memset(ay, 0, N * sizeof(double));
 
-    
-    /*
-    //#pragma omp parallel for schedule(dynamic)
-    for (int i = 0; i < N; i++) {
-        // Precompute all constants and mark them with const so that the compiler can optimize
-        const double xi = x[i];
-        const double yi = y[i];
-        const double mi = mass[i];
-        const double G_mi = G * mi; 
-        double axi = 0.0;
-        double ayi = 0.0;
-        for (int j = i + 1; j < N; j++) {
-            const double xj = x[j];
-            const double yj = y[j];
-            const double dx = xj - xi;
-            const double dy = yj - yi;
-            const double r_sq = dx*dx + dy*dy;
-            const double r = sqrt(r_sq);
-            const double r_eps = r + EPS;
-            const double denom = r_eps * r_eps * r_eps;
-            const double mass_j = mass[j];
-            const double a_i = G * mass_j / denom;
-            const double a_j = G_mi / denom;
-            axi += a_i * dx;
-            ayi += a_i * dy;
-            // The resource comsumption of atomic operation is very high, we use other method instead
-            // #pragma omp atomic
-            // ax[j] -= a_j * dx;
-            // #pragma omp atomic
-            // ay[j] -= a_j * dy;
+#if pthread
+    // Initialize thread data and create threads
+    pthread_t threads[n_threads];
+    thread_data args[n_threads];
+    for (int i = 0; i < n_threads; i++) {
+        args[i].thread_id = i;
+        args[i].N = N;
+        args[i].G = G;
+        args[i].x = x;
+        args[i].y = y;
+        args[i].mass = mass;
+        args[i].ax_private = (double *)calloc(N, sizeof(double));
+        args[i].ay_private = (double *)calloc(N, sizeof(double));
+        if (args[i].ax_private == NULL || args[i].ay_private == NULL) {
+            perror("Memory allocation failed in thread private arrays");
+            exit(1);
         }
-        // #pragma omp atomic
-        // ax[i] += axi;
-        // #pragma omp atomic
-        // ay[i] += ayi;
     }
-    */
+    next_i = 0;
+    pthread_mutex_init(&mutex, NULL);
+    for (int i = 0; i < n_threads; i++) {
+        pthread_create(&threads[i], NULL, compute_forces_thread, &args[i]);
+    }
+    // Wait for all threads to finish
+    for (int i = 0; i < n_threads; i++) pthread_join(threads[i], NULL);
+
+    // Add each thread's private array to the global array
+    for(int i = 0; i < n_threads; i++) {
+        for (int j = 0; j < N; j++) {
+            ax[j] += args[i].ax_private[j];
+            ay[j] += args[i].ay_private[j];
+        }
+        free(args[i].ax_private);
+        free(args[i].ay_private);
+    }
+    pthread_mutex_destroy(&mutex);
+#else    
    #pragma omp parallel
    {
        // Allocate a private accumulation array for each thread, initialized to 0
@@ -172,6 +268,7 @@ void compute_forces(int N, double G,
            ay_private[i] += ayi;
        }
 
+    
        // Reduction: add each thread's private array to the global array
        #pragma omp critical
        {
@@ -184,14 +281,14 @@ void compute_forces(int N, double G,
        free(ax_private);
        free(ay_private);
    }
-
+#endif
 }
 
 /* Update the positions and velocities of all particles */
 void update_positions(int N, double delta_t, 
                       double * restrict x, double * restrict y, 
                       double * restrict vx, double * restrict vy, 
-                      const double * restrict ax, const double * restrict ay) {
+                      const double * restrict ax, const double * restrict ay, int n_threads) {
         #pragma omp parallel for schedule(dynamic)
         // This loop is simple enough to be parallelized, we don't need to worry about false sharing
         // or cache coherence issues
@@ -242,7 +339,7 @@ void visualize(int N, const double * restrict x, const double * restrict y) {
 }
 
 /* Simulation function: allocate arrays, call modules and release memory */
-void simulate(int N, char *filename, int nsteps, double delta_t, int graphics) {
+void simulate(int N, char *filename, int nsteps, double delta_t, int graphics, int n_threads) {
     double *x          = malloc(N * sizeof(double));
     double *y          = malloc(N * sizeof(double));
     double *mass       = malloc(N * sizeof(double));
@@ -267,8 +364,8 @@ void simulate(int N, char *filename, int nsteps, double delta_t, int graphics) {
 #endif
 
     for (int step = 0; step < nsteps; step++) {
-        compute_forces(N, G, x, y, mass, ax, ay);
-        update_positions(N, delta_t, x, y, vx, vy, ax, ay);
+        compute_forces(N, G, x, y, mass, ax, ay, n_threads);
+        update_positions(N, delta_t, x, y, vx, vy, ax, ay, n_threads);
 #if GRAPHICS
         if (graphics) {
             visualize(N, x, y);
