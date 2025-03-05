@@ -9,7 +9,7 @@
 
 #define EPSILON 1e-3
 #define GRAPHICS 1 
-#define pthread 0
+#define pthread 1
 #define CHUNK_SIZE 64
 
 #if pthread
@@ -24,21 +24,10 @@ typedef struct{
     double * ax_private;
     double * ay_private;
 } thread_data;
-
-typedef struct{
-    int start;
-    int end;
-    double delta_t;
-    double * restrict x;
-    double * restrict y;
-    double * restrict vx;
-    double * restrict vy;
-    const double * restrict ax;
-    const double * restrict ay;
-} update_args_t;
+// Functions for pthread
+void* compute_forces_thread(void* args);
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 int next_i = 0;
-
 #endif
 
 const int windowWidth = 800;
@@ -157,7 +146,6 @@ void *compute_forces_thread(void* args){
             const double G_mi = G * mi;
             double axi = 0.0;
             double ayi = 0.0;
-            #pragma omp simd reduction(+:axi, ayi)
             for (int j = i + 1; j < N; j++) {
                 const double xj = x[j];
                 const double yj = y[j];
