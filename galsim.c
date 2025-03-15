@@ -9,7 +9,7 @@
 
 #define EPSILON 1e-3
 #define GRAPHICS 1 
-#define pthread 1
+#define pthread 0
 #define CHUNK_SIZE 64
 
 #if pthread
@@ -216,61 +216,33 @@ void compute_forces(int N, double G,
     }
     pthread_mutex_destroy(&mutex);
 #else    
-   #pragma omp parallel
-   {
-       // Allocate a private accumulation array for each thread, initialized to 0
-       double *ax_private = (double *)calloc(N, sizeof(double));
-       double *ay_private = (double *)calloc(N, sizeof(double));
-       if (ax_private == NULL || ay_private == NULL) {
-           perror("Memory allocation failed in thread private arrays");
-           exit(1);
-       }
-
-       // Use dynamic scheduling to solve the problem of uneven 
-       // workload of inner loops corresponding to different i
-       // Can try nowait, but it seems useless
-       #pragma omp for schedule(dynamic), nowait
-       for (int i = 0; i < N; i++) {
-           const double xi = x[i];
-           const double yi = y[i];
-           const double mi = mass[i];
-           const double G_mi = G * mi;
-           double axi = 0.0;
-           double ayi = 0.0;
-           #pragma omp simd reduction(+:axi, ayi)
-           for (int j = i + 1; j < N; j++) {
-               const double xj = x[j];
-               const double yj = y[j];
-               const double dx = xj - xi;
-               const double dy = yj - yi;
-               const double r_sq = dx * dx + dy * dy;
-               const double r = sqrt(r_sq);
-               const double r_eps = r + EPS;
-               const double denom = r_eps * r_eps * r_eps;
-               const double a_i = G * mass[j] / denom;
-               const double a_j = G_mi / denom;
-               axi += a_i * dx;
-               ayi += a_i * dy;
-               ax_private[j] -= a_j * dx;
-               ay_private[j] -= a_j * dy;
-           }
-           ax_private[i] += axi;
-           ay_private[i] += ayi;
-       }
-
-    
-       // Reduction: add each thread's private array to the global array
-       #pragma omp critical
-       {
-           for (int i = 0; i < N; i++) {
-               ax[i] += ax_private[i];
-               ay[i] += ay_private[i];
-           }
-       }
-
-       free(ax_private);
-       free(ay_private);
-   }
+    #pragma omp parallel for schedule(dynamic, 8) reduction(+:ax[:N],ay[:N])
+    for (int i = 0; i < N; i++) {
+        double axi = 0.0, ayi = 0.0;
+        const double xi = x[i];
+        const double yi = y[i];
+        const double mi = mass[i];
+        const double G_mi = G * mi;
+        #pragma omp simd reduction(+:axi,ayi) 
+        for (int j = i + 1; j < N; j++) {
+            const double xj = x[j];
+            const double yj = y[j];
+            const double dx = xj - xi;
+            const double dy = yj - yi;
+            const double r_sq = dx * dx + dy * dy;
+            const double r = sqrt(r_sq);
+            const double r_eps = r + EPSILON;
+            const double denom = r_eps * r_eps * r_eps;
+            const double a_i = G * mass[j] / denom;
+            const double a_j = G_mi / denom;
+            axi += a_i * dx;
+            ayi += a_i * dy;
+            ax[j] -= a_j * dx;
+            ay[j] -= a_j * dy;
+        }
+        ax[i] += axi;
+        ay[i] += ayi;
+    }
 #endif
 }
 
